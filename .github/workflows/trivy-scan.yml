@@ -24,7 +24,6 @@ jobs:
         run: |
           docker build -t vulnerable-image .
 
-      # Install Trivy
       - name: Install Trivy
         run: |
           sudo apt-get update
@@ -43,27 +42,33 @@ jobs:
       # CVE Scan
       - name: CVE Scan
         run: |
-          trivy image --severity CRITICAL,HIGH vulnerable-image
+          trivy image --severity HIGH,CRITICAL vulnerable-image
 
-      # Secret Scan
+      # Filesystem Secret Scan
       - name: Secret Scan
         run: |
-          trivy image --scanners secret vulnerable-image
+          trivy fs --scanners secret .
 
       # Misconfiguration Scan
       - name: Misconfiguration Scan
         run: |
           trivy config .
 
-      # Generate SARIF report
+      # Full Filesystem Scan
+      - name: Full Scan
+        run: |
+          trivy fs --scanners vuln,secret,misconfig .
+
+      # Generate SARIF
       - name: Generate SARIF Report
         run: |
-          trivy image \
+          trivy fs \
+            --scanners vuln,secret,misconfig \
             --format sarif \
             --output trivy-results.sarif \
-            vulnerable-image
+            .
 
-      # Upload SARIF report to GitHub Security
+      # Upload SARIF
       - name: Upload SARIF Report
         uses: github/codeql-action/upload-sarif@v3
         with:
