@@ -1,69 +1,59 @@
-name: Advanced Trivy Scan
+FROM ubuntu:16.04
 
-on:
-  push:
-    branches:
-      - main
+# Install old vulnerable packages
+RUN apt-get update && apt-get install -y \
+    apache2 \
+    openssl \
+    curl \
+    bash \
+    sudo \
+    wget \
+    vim \
+    telnet \
+    ftp \
+    mysql-client \
+    python2.7
 
-  workflow_dispatch:
+# Hardcoded secrets
+ENV AWS_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"
+ENV AWS_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 
-jobs:
-  trivy-scan:
-    runs-on: ubuntu-latest
+# Weak password file
+RUN echo "root:root123" | chpasswd
 
-    steps:
+# Create sensitive files
+RUN mkdir /app
 
-      - name: Checkout Code
-        uses: actions/checkout@v4
+# Fake API Keys
+RUN echo "github_token=ghp_1234567890abcdefghijklmnop" > /app/config.txt
 
-      - name: Build Docker Image
-        run: |
-          docker build -t vulnerable-image .
+RUN echo "password=admin123" >> /app/config.txt
 
-      # Install Trivy
-      - name: Install Trivy
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+RUN echo "secret_key=mysecretkey" >> /app/config.txt
 
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | \
-          gpg --dearmor | \
-          sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+# SSH private key simulation
+RUN echo "-----BEGIN RSA PRIVATE KEY-----" > /app/id_rsa
 
-          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | \
-          sudo tee /etc/apt/sources.list.d/trivy.list
+RUN echo "MIIEowIBAAKCAQEA1234567890EXAMPLEKEY" >> /app/id_rsa
 
-          sudo apt-get update
-          sudo apt-get install -y trivy
+RUN echo "-----END RSA PRIVATE KEY-----" >> /app/id_rsa
 
-      # Vulnerability scan
-      - name: CVE Scan
-        run: |
-          trivy image --severity CRITICAL,HIGH vulnerable-image
+# Dangerous permissions
+RUN chmod 777 /app/config.txt
 
-      # Secret scan
-      - name: Secret Scan
-        run: |
-          trivy image --scanners secret vulnerable-image
+RUN chmod 777 /app/id_rsa
 
-      # Misconfiguration scan
-      - name: Misconfiguration Scan
-        run: |
-          trivy config .
+# Run as root
+USER root
 
-      # Full scan
-      - name: Full Scan
-        run: |
-          trivy image --scanners vuln,secret,misconfig vulnerable-image
+# Expose unnecessary ports
+EXPOSE 21
+EXPOSE 22
+EXPOSE 23
+EXPOSE 80
+EXPOSE 3306
 
-      # Generate JSON report
-      - name: Generate Report
-        run: |
-          trivy image -f json -o trivy-report.json vulnerable-image
+# Create vulnerable web page
+RUN echo "<h1>Vulnerable Apache Server</h1>" > /var/www/html/index.html
 
-      # Upload report
-      - name: Upload Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-report
-          path: trivy-report.json
+CMD ["/bin/bash"]
