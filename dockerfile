@@ -1,17 +1,11 @@
-name: Trivy Security Scan
+name: Advanced Trivy Scan
 
 on:
   push:
     branches:
       - main
 
-  pull_request:
-
   workflow_dispatch:
-
-permissions:
-  contents: read
-  security-events: write
 
 jobs:
   trivy-scan:
@@ -19,11 +13,9 @@ jobs:
 
     steps:
 
-      # Checkout code
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Build Docker image
       - name: Build Docker Image
         run: |
           docker build -t vulnerable-image .
@@ -44,31 +36,34 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y trivy
 
-      # Show Vulnerabilities in GitHub Actions logs
-      - name: Trivy Vulnerability Scan
+      # Vulnerability scan
+      - name: CVE Scan
         run: |
-          trivy image --severity CRITICAL,HIGH,MEDIUM vulnerable-image
+          trivy image --severity CRITICAL,HIGH vulnerable-image
 
-      # Show Secrets in logs
-      - name: Trivy Secret Scan
+      # Secret scan
+      - name: Secret Scan
         run: |
           trivy image --scanners secret vulnerable-image
 
-      # Show Misconfigurations in logs
-      - name: Trivy Misconfiguration Scan
+      # Misconfiguration scan
+      - name: Misconfiguration Scan
         run: |
           trivy config .
 
-      # Create SARIF report for GitHub Security tab
-      - name: Generate SARIF Report
+      # Full scan
+      - name: Full Scan
         run: |
-          trivy image \
-            --format sarif \
-            --output trivy-results.sarif \
-            vulnerable-image
+          trivy image --scanners vuln,secret,misconfig vulnerable-image
 
-      # Upload SARIF to GitHub Security
-      - name: Upload SARIF Report
-        uses: github/codeql-action/upload-sarif@v3
+      # Generate JSON report
+      - name: Generate Report
+        run: |
+          trivy image -f json -o trivy-report.json vulnerable-image
+
+      # Upload report
+      - name: Upload Report
+        uses: actions/upload-artifact@v4
         with:
-          sarif_file: trivy-results.sarif
+          name: trivy-report
+          path: trivy-report.json
