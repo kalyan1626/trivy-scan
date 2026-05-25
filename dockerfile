@@ -1,59 +1,74 @@
-FROM ubuntu:16.04
+name: Trivy Security Scan
 
-# Install old vulnerable packages
-RUN apt-get update && apt-get install -y \
-    apache2 \
-    openssl \
-    curl \
-    bash \
-    sudo \
-    wget \
-    vim \
-    telnet \
-    ftp \
-    mysql-client \
-    python2.7
+on:
+  push:
+    branches:
+      - main
 
-# Hardcoded secrets
-ENV AWS_ACCESS_KEY_ID="AKIAIOSFODNN7EXAMPLE"
-ENV AWS_SECRET_ACCESS_KEY="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+  pull_request:
 
-# Weak password file
-RUN echo "root:root123" | chpasswd
+  workflow_dispatch:
 
-# Create sensitive files
-RUN mkdir /app
+permissions:
+  contents: read
+  security-events: write
 
-# Fake API Keys
-RUN echo "github_token=ghp_1234567890abcdefghijklmnop" > /app/config.txt
+jobs:
+  trivy-scan:
+    runs-on: ubuntu-latest
 
-RUN echo "password=admin123" >> /app/config.txt
+    steps:
 
-RUN echo "secret_key=mysecretkey" >> /app/config.txt
+      # Checkout code
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-# SSH private key simulation
-RUN echo "-----BEGIN RSA PRIVATE KEY-----" > /app/id_rsa
+      # Build Docker image
+      - name: Build Docker Image
+        run: |
+          docker build -t vulnerable-image .
 
-RUN echo "MIIEowIBAAKCAQEA1234567890EXAMPLEKEY" >> /app/id_rsa
+      # Install Trivy
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
 
-RUN echo "-----END RSA PRIVATE KEY-----" >> /app/id_rsa
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | \
+          gpg --dearmor | \
+          sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
 
-# Dangerous permissions
-RUN chmod 777 /app/config.txt
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | \
+          sudo tee /etc/apt/sources.list.d/trivy.list
 
-RUN chmod 777 /app/id_rsa
+          sudo apt-get update
+          sudo apt-get install -y trivy
 
-# Run as root
-USER root
+      # Show Vulnerabilities in GitHub Actions logs
+      - name: Trivy Vulnerability Scan
+        run: |
+          trivy image --severity CRITICAL,HIGH,MEDIUM vulnerable-image
 
-# Expose unnecessary ports
-EXPOSE 21
-EXPOSE 22
-EXPOSE 23
-EXPOSE 80
-EXPOSE 3306
+      # Show Secrets in logs
+      - name: Trivy Secret Scan
+        run: |
+          trivy image --scanners secret vulnerable-image
 
-# Create vulnerable web page
-RUN echo "<h1>Vulnerable Apache Server</h1>" > /var/www/html/index.html
+      # Show Misconfigurations in logs
+      - name: Trivy Misconfiguration Scan
+        run: |
+          trivy config .
 
-CMD ["/bin/bash"]
+      # Create SARIF report for GitHub Security tab
+      - name: Generate SARIF Report
+        run: |
+          trivy image \
+            --format sarif \
+            --output trivy-results.sarif \
+            vulnerable-image
+
+      # Upload SARIF to GitHub Security
+      - name: Upload SARIF Report
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
